@@ -15,4 +15,5 @@ PPO and DQN follow the cleanrl arguments. See their [docs](https://docs.cleanrl.
 Using gpt4o-mini requires an API key, so you'll need one to execute it. If you do not have one and want to see this functionality in use, you can message me! \
 `python llm.py`
 
+Credit to Cloos et al. and Huang et al. for the base Baba simulator and CleanRL implementations.\
 Andrew (andrew.m.wu@gmail.com)
