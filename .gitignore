@@ -1,0 +1,5 @@
+runs/
+trajectories/
+videos/
+wandb/
+__pycache__/
