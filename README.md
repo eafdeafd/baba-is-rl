@@ -9,10 +9,10 @@ after cloning this repo, run \
 # PPO and DQN
 PPO and DQN follow the cleanrl arguments. See their [docs](https://docs.cleanrl.dev/get-started/basic-usage/#two-ways-to-run) for more arguments. \
 `python ppo.py --seed 1 --total-timesteps 1000000 --env_id env/make_win`\
-`python dqn.py --seed 1 --total-timesteps 1000000 --env_id env/make_win`\
+`python dqn.py --seed 1 --total-timesteps 1000000 --env_id env/make_win`
 
 # LLM
 Using gpt4o-mini requires an API key, so you'll need one to execute it. If you do not have one and want to see this functionality in use, you can message me! \
-`python llm.py`\
+`python llm.py`
 
 Andrew (andrew.m.wu@gmail.com)
