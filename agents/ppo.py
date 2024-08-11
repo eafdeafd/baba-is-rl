@@ -12,6 +12,7 @@ import torch.optim as optim
 import tyro
 from torch.distributions.categorical import Categorical
 from torch.utils.tensorboard import SummaryWriter
+from baba_is_ai.baba.registration import make
 from dqn import preprocess, make_env
 
 

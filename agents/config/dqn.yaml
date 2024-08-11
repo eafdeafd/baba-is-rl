@@ -1,0 +1,27 @@
+exp_name: "dqn"  # the name of this experiment
+seed: 1  # seed of the experiment
+torch_deterministic: true  # if toggled, `torch.backends.cudnn.deterministic=False`
+cuda: true  # if toggled, cuda will be enabled by default
+track: false  # if toggled, this experiment will be tracked with Weights and Biases
+wandb_project_name: "rl-is-baba"  # the wandb's project name
+wandb_entity: "amwu"  # the entity (team) of wandb's project
+capture_video: true  # whether to capture videos of the agent performances (check out `videos` folder)
+save_model: true  # whether to save model into the `runs/{run_name}` folder
+upload_model: false  # whether to upload the saved model to huggingface
+hf_entity: ""  # the user or org name of the model repository from the Hugging Face Hub
+
+# Algorithm specific arguments
+env_id: "env/goto_win"  # the id of the environment
+total_timesteps: 1000000  # total timesteps of the experiments
+learning_rate: 0.0001  # the learning rate of the optimizer
+num_envs: 1  # the number of parallel game environments
+buffer_size: 100000  # the replay memory buffer size
+gamma: 0.99  # the discount factor gamma
+tau: 1.0  # the target network update rate
+target_network_frequency: 500  # the timesteps it takes to update the target network
+batch_size: 32  # the batch size of sample from the reply memory
+start_e: 1.0  # the starting epsilon for exploration
+end_e: 0.01  # the ending epsilon for exploration
+exploration_fraction: 0.1  # the fraction of `total-timesteps` it takes from start-e to go end-e
+learning_starts: 80000  # timestep to start learning
+train_frequency: 4  # the frequency of training
