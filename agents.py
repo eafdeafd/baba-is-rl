@@ -18,6 +18,7 @@ import yaml
 from util import make_env
 from dataclasses import make_dataclass
 import wandb
+from collect_traj import load_trajectories
 
 class Agent(nn.Module):
     def __init__(self, envs, device=None):
@@ -175,7 +176,7 @@ class Trainer:
         self.config = config
         self.run_name = f"{config.env_id}__{config.exp_name}__{config.seed}__{int(time.time())}"
         if config.track:
-            wandb.init(
+            self.run = wandb.init(
                 project=config.wandb_project_name,
                 entity=config.wandb_entity,
                 sync_tensorboard=True,
@@ -206,8 +207,8 @@ class Trainer:
 class DQNTrainer(Trainer):
     def __init__(self, config):
         super().__init__(config)
-        self.q_network = DQNAgent(self.envs, self.device).to(self.device)
-        self.optimizer = optim.Adam(self.q_network.parameters(), lr=config.learning_rate)
+        self.agent = DQNAgent(self.envs, self.device).to(self.device)
+        self.optimizer = optim.Adam(self.agent.parameters(), lr=config.learning_rate)
         self.rb = ReplayBuffer(
             config.buffer_size,
             self.envs.single_observation_space,
@@ -221,19 +222,48 @@ class DQNTrainer(Trainer):
         slope = (end_e - start_e) / duration
         return max(slope * t + start_e, end_e)
 
+    def load_traj(self, dir_list):
+        """
+        Input: directory list (hopefully) of levels in trajectories/ folder to load from
+        Loads trajectories to replay buffer to seed DQN with trajectories
+        """
+        for d in dir_list:
+            traj = load_trajectories(d)
+            for t in traj:
+                # off by one error in collect_traj... TODO: fix this better
+                self.rb.add(t.prev_obs, t.obs, np.array([t.action - 1]), np.array([t.rew]), np.array([t.done]), {})
+
     def train(self):
-        #TODO: seed DQN with imitation learning from human.
+        global_step = 0
+        if self.config.track and wandb.run.resumed:
+            run = self.run
+            starting_update = run.summary.get("charts/global_step") + 1
+            global_step = starting_update
+            api = wandb.Api()
+            run = api.run(f"{run.entity}/{run.project}/{run.id}")
+            model = run.file("dqn_agent.pt")
+            model.download(f"models/{self.run_name}/")
+            self.agent.load_state_dict(torch.load(
+                f"models/{self.run_name}/dqn_agent.pt", map_location=self.device))
+            self.agent.eval()
+            self.config.total_timesteps += global_step
+            print(f"resumed at update {starting_update}")
+
+        if len(self.config.seed_traj_dirs) != 0:
+            # seed DQN with imitation learning from human.
+            dir_list = self.config.seed_traj_dirs.split()
+            self.load_traj(dir_list)
 
         start_time = time.time()        
-        target_network = QCNNetwork(self.envs)
-        target_network.load_state_dict(self.q_network.q_network.state_dict())
+        target_network = DQNAgent(self.envs, self.device).to(self.device)
+        target_network.load_state_dict(self.agent.state_dict())
         # TRY NOT TO MODIFY: start the game
         obs, _ = self.envs.reset(seed=self.config.seed)
         #print("Initial observation shape:", obs.shape)
-        for global_step in range(self.config.total_timesteps):
+        for i in range(self.config.total_timesteps):
             # ALGO LOGIC: put action logic here
-            self.q_network.update_epsilon(self.linear_schedule(self.config.start_e, self.config.end_e, self.config.exploration_fraction * self.config.total_timesteps, global_step))
-            actions = self.q_network.get_action(obs)
+            self.agent.update_epsilon(self.linear_schedule(self.config.start_e, self.config.end_e, self.config.exploration_fraction * self.config.total_timesteps, global_step))
+            actions = self.agent.get_action(obs)
 
             # TRY NOT TO MODIFY: execute the game and log data.
             next_obs, rewards, terminations, truncations, infos = self.envs.step(actions)
@@ -250,6 +280,7 @@ class DQNTrainer(Trainer):
             for idx, trunc in enumerate(truncations):
                 if trunc:
                     real_next_obs[idx] = infos["final_observation"][idx]
+        
             self.rb.add(obs, real_next_obs, actions, rewards, terminations, infos)
 
             # TRY NOT TO MODIFY: CRUCIAL step easy to overlook
@@ -262,7 +293,7 @@ class DQNTrainer(Trainer):
                     with torch.no_grad():
                         target_max, _ = target_network(data.next_observations).max(dim=1)
                         td_target = data.rewards.flatten() + self.config.gamma * target_max * (1 - data.dones.flatten())
-                    old_val = self.q_network.q_network(data.observations).gather(1, data.actions).squeeze()
+                    old_val = self.agent(data.observations).gather(1, data.actions).squeeze()
                     loss = F.mse_loss(td_target, old_val)
 
                     if global_step % 100 == 0:
@@ -278,18 +309,27 @@ class DQNTrainer(Trainer):
 
                 # update target network
                 if global_step % self.config.target_network_frequency == 0:
-                    for target_network_param, q_network_param in zip(target_network.parameters(), self.q_network.q_network.parameters()):
+                    for target_network_param, q_network_param in zip(target_network.parameters(), self.agent.parameters()):
                         target_network_param.data.copy_(
                             self.config.tau * q_network_param.data + (1.0 - self.config.tau) * target_network_param.data
                         )
-        return self.q_network
+            global_step += self.config.num_envs
+            self.writer.add_scalar("charts/global_step", global_step, global_step)
+        return self.agent
     
     def save_model(self):
-        model_path = f"runs/{self.run_name}/{self.config.exp_name}.cleanrl_model"
-        torch.save(self.q_network.state_dict(), model_path)
+        if self.config.track:
+            # wandb save
+            torch.save(self.agent.state_dict(), f"{wandb.run.dir}/dqn_agent.pt")
+            wandb.save(f"{wandb.run.dir}/dqn_agent.pt", policy="now")
+            # local save
+        model_path = f"runs/{self.run_name}/{self.config.exp_name}.dqn_agent.pt"
+        torch.save(self.agent.state_dict(), model_path)
         print(f"model saved to {model_path}")
-        from cleanrl_utils.evals.dqn_eval import evaluate
 
+    def eval_model(self):
+        from cleanrl_utils.evals.dqn_eval import evaluate
+        model_path = f"runs/{self.run_name}/{self.config.exp_name}.dqn_agent.pt"
         episodic_returns = evaluate(
             model_path,
             make_env,
@@ -303,13 +343,6 @@ class DQNTrainer(Trainer):
         for idx, episodic_return in enumerate(episodic_returns):
             self.writer.add_scalar("eval/episodic_return", episodic_return, idx)
 
-        if self.config.upload_model:
-            from cleanrl_utils.huggingface import push_to_hub
-
-            repo_name = f"{self.config.env_id}-{self.config.exp_name}-seed{self.config.seed}"
-            repo_id = f"{self.config.hf_entity}/{repo_name}" if self.config.hf_entity else repo_name
-            push_to_hub(self.config, episodic_returns, repo_id, "DQN", f"runs/{self.run_name}", f"videos/{self.run_name}-eval")
-
 class PPOTrainer(Trainer):
     def __init__(self, config):
         super().__init__(config)
@@ -317,6 +350,20 @@ class PPOTrainer(Trainer):
         self.optimizer = optim.Adam(self.agent.parameters(), lr=config.learning_rate, eps=1e-5)
 
     def train(self):
+        global_step = 0
+        if self.config.track and wandb.run.resumed:
+            run = self.run
+            starting_update = run.summary.get("charts/global_step") + 1
+            global_step = starting_update
+            api = wandb.Api()
+            run = api.run(f"{run.entity}/{run.project}/{run.id}")
+            model = run.file("ppo_agent.pt")
+            model.download(f"models/{self.run_name}/")
+            self.agent.load_state_dict(torch.load(
+                f"models/{self.run_name}/ppo_agent.pt", map_location=self.device))
+            self.agent.eval()
+            print(f"resumed at update {starting_update}")
+
         # ALGO Logic: Storage setup
         obs = torch.zeros((self.config.num_steps, self.config.num_envs) + self.envs.single_observation_space.shape).to(self.device)
         actions = torch.zeros((self.config.num_steps, self.config.num_envs) + self.envs.single_action_space.shape).to(self.device)
@@ -326,7 +373,6 @@ class PPOTrainer(Trainer):
         values = torch.zeros((self.config.num_steps, self.config.num_envs)).to(self.device)
 
         # TRY NOT TO MODIFY: start the game
-        global_step = 0
         start_time = time.time()
         next_obs, _ = self.envs.reset(seed=self.config.seed)
         next_obs = torch.Tensor(next_obs).to(self.device)
@@ -460,7 +506,19 @@ class PPOTrainer(Trainer):
             self.writer.add_scalar("losses/explained_variance", explained_var, global_step)
             print("SPS:", int(global_step / (time.time() - start_time)))
             self.writer.add_scalar("charts/SPS", int(global_step / (time.time() - start_time)), global_step)
+            self.writer.add_scalar("charts/global_step", global_step, global_step)
         return self.agent
+    
+    def save_model(self):
+        if self.config.track:
+            # wandb save
+            torch.save(self.agent.state_dict(), f"{wandb.run.dir}/ppo_agent.pt")
+            wandb.save(f"{wandb.run.dir}/ppo_agent.pt", policy="now")
+        # local save
+        model_path = f"runs/{self.run_name}/{self.config.exp_name}.ppo_agent.pt"
+        torch.save(self.agent.state_dict(), model_path)
+        print(f"model saved to {model_path}")
+
 def main():
     def load_config(path):
         with open(path, 'r') as file:
@@ -480,9 +538,11 @@ def main():
         trainer = DQNTrainer(cfg)
         trainer.train()
         trainer.save_model()
+        trainer.eval_model()
     elif cfg.exp_name == 'ppo':
         trainer = PPOTrainer(cfg)
         trainer.train()
+        trainer.save_model()
     else:
         raise ValueError("Unknown algorithm specified in config")
 

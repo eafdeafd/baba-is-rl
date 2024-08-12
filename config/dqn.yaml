@@ -2,7 +2,7 @@ exp_name: "dqn"  # the name of this experiment
 seed: 1  # seed of the experiment
 torch_deterministic: true  # if toggled, `torch.backends.cudnn.deterministic=False`
 cuda: true  # if toggled, cuda will be enabled by default
-track: false  # if toggled, this experiment will be tracked with Weights and Biases
+track: true  # if toggled, this experiment will be tracked with Weights and Biases
 wandb_project_name: "rl-is-baba"  # the wandb's project name
 wandb_entity: "amwu"  # the entity (team) of wandb's project
 capture_video: true  # whether to capture videos of the agent performances (check out `videos` folder)
@@ -12,7 +12,7 @@ hf_entity: ""  # the user or org name of the model repository from the Hugging F
 
 # Algorithm specific arguments
 env_id: "env/goto_win"  # the id of the environment
-total_timesteps: 1000000  # total timesteps of the experiments
+total_timesteps: 100_000  # total timesteps of the experiments
 learning_rate: 0.0001  # the learning rate of the optimizer
 num_envs: 1  # the number of parallel game environments
 buffer_size: 100000  # the replay memory buffer size
@@ -25,3 +25,5 @@ end_e: 0.01  # the ending epsilon for exploration
 exploration_fraction: 0.1  # the fraction of `total-timesteps` it takes from start-e to go end-e
 learning_starts: 80000  # timestep to start learning
 train_frequency: 4  # the frequency of training
+
+seed_traj_dirs: "goto_win" # seeds the trajectories with human or other user defined trajectories, replace with "dir1 dir2 dir3"
