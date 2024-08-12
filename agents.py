@@ -14,11 +14,10 @@ from torch.utils.tensorboard import SummaryWriter
 from stable_baselines3.common.buffers import ReplayBuffer
 import baba
 import einops
-import yaml
 from util import make_env
-from dataclasses import make_dataclass
 import wandb
 from collect_traj import load_trajectories
+from util import load_config
 
 class Agent(nn.Module):
     def __init__(self, envs, device=None):
@@ -233,6 +232,23 @@ class DQNTrainer(Trainer):
                 # off by one error in collect_traj... TODO: fix this better
                 self.rb.add(t.prev_obs, t.obs, np.array([t.action - 1]), np.array([t.rew]), np.array([t.done]), {})
 
+
+    def load_model(self, local=True, name=""):
+        if local:
+            self.agent.load_state_dict(torch.load(
+                f"models/{name}/dqn_agent.pt", map_location=self.device))
+            self.agent.eval()
+        else:
+            api = wandb.Api()
+            run = api.run(f"{run.entity}/{run.project}/{run.id}")
+            model = run.file("dqn_agent.pt")
+            model.download(f"models/{self.run_name}/")
+            self.agent.load_state_dict(torch.load(
+                f"models/{self.run_name}/dqn_agent.pt", map_location=self.device))
+            self.agent.eval()
+        return self.agent
+
+
     def train(self):
         global_step = 0
         if self.config.track and wandb.run.resumed:
@@ -348,6 +364,21 @@ class PPOTrainer(Trainer):
         super().__init__(config)
         self.agent = PPOAgent(self.envs, self.device).to(self.device)
         self.optimizer = optim.Adam(self.agent.parameters(), lr=config.learning_rate, eps=1e-5)
+
+    def load_model(self, local=True, name=""):
+        if local:
+            self.agent.load_state_dict(torch.load(
+                f"models/{name}/ppo_agent.pt", map_location=self.device))
+            self.agent.eval()
+        else:
+            api = wandb.Api()
+            run = api.run(f"{run.entity}/{run.project}/{run.id}")
+            model = run.file("ppo_agent.pt")
+            model.download(f"models/{self.run_name}/")
+            self.agent.load_state_dict(torch.load(
+                f"models/{self.run_name}/ppo_agent.pt", map_location=self.device))
+            self.agent.eval()
+        return self.agent
 
     def train(self):
         global_step = 0
@@ -520,18 +551,11 @@ class PPOTrainer(Trainer):
         print(f"model saved to {model_path}")
 
 def main():
-    def load_config(path):
-        with open(path, 'r') as file:
-            return yaml.safe_load(file)
     parse = argparse.ArgumentParser()
     # get ppo or dqn
     parse.add_argument('--name', type=str, required=True, default='ppo', help='agent name')
     args = parse.parse_args()
-    config = load_config(f"config/{args.name}.yaml")
-    # makes a dataclass out of a dict
-    cfg = make_dataclass(
-        "exp_args", ((k, type(v)) for k, v in config.items())
-    )(**config)
+    cfg = load_config(f"config/{args.name}.yaml")
 
     # now we can do things the cleanrl way
     if cfg.exp_name == 'dqn':

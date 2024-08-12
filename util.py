@@ -1,6 +1,7 @@
 import gymnasium as gym
 import baba
-import einops
+import yaml
+from dataclasses import make_dataclass
 
 def make_env(env_id, seed, idx, capture_video, run_name):
     def thunk():
@@ -15,3 +16,11 @@ def make_env(env_id, seed, idx, capture_video, run_name):
         return env
 
     return thunk
+
+def load_config(path):
+    with open(path, 'r') as file:
+        config = yaml.safe_load(file)
+        cfg = make_dataclass(
+            "exp_args", ((k, type(v)) for k, v in config.items())
+        )(**config)
+        return cfg
