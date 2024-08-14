@@ -5,11 +5,11 @@ cuda: true  # if toggled, cuda will be enabled by default
 track: true  # if toggled, this experiment will be tracked with Weights and Biases
 wandb_project_name: "rl-is-baba"  # the wandb's project name
 wandb_entity: "amwu"  # the entity (team) of wandb's project
-capture_video: true  # whether to capture videos of the agent performances (check out `videos` folder)
+capture_video: False  # whether to capture videos of the agent performances (check out `videos` folder)
 
 # Algorithm specific arguments
 env_id: "env/goto_win"  # the id of the environment
-total_timesteps: 10_000 #10000000  # total timesteps of the experiments
+total_timesteps: 1000 #10000000  # total timesteps of the experiments
 learning_rate: 0.00025  # the learning rate of the optimizer
 num_envs: 1  # the number of parallel game environments
 num_steps: 128  # the number of steps to run in each environment per policy rollout

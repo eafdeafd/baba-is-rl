@@ -83,7 +83,8 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="Play Baba Is You")
     parser.add_argument("--env", type=str, default="two_room-break_stop-make_win-distr_obj_rule", help="Environment id")
+    parser.add_argument("--size", type=int, default=3)
     args = parser.parse_args()
 
-    env = make(f"env/{args.env}")
+    env = make(f"env/{args.env}", width=args.size, height=args.size)
     play(env)

@@ -5,6 +5,7 @@ from agents import DQNTrainer, PPOTrainer
 from util import load_config
 import torch
 
+# given a model, play it step by step
 
 def play(env, model, transpose=True, fps=30, zoom=None, callback=None):
     # Set up the action keys and environment
@@ -35,17 +36,12 @@ def play(env, model, transpose=True, fps=30, zoom=None, callback=None):
             obs, _ = env.reset()
             step = 0
             always_step = False
-        # Use model to predict action based on current observation
         action = model.get_action(obs[None, :])
         prev_obs = obs
-
-        # Render and display the current state
         rendered = env.render(mode="rgb_array")
         display_arr(screen, rendered, transpose=transpose, video_size=video_size)
 
-        # Process pygame events
         if always_step:
-            # Perform one step using the model's action
             obs, rew, env_done, truncation, info = env.step(action)
             step += 1
             if callback:
@@ -61,7 +57,6 @@ def play(env, model, transpose=True, fps=30, zoom=None, callback=None):
                     elif event.key in keys_to_action:
                         user_action = keys_to_action[event.key]
                         if user_action == 'step':
-                            # Perform one step using the model's action
                             obs, rew, env_done, truncation, info = env.step(action)
                             step += 1
                             if callback:
@@ -69,7 +64,7 @@ def play(env, model, transpose=True, fps=30, zoom=None, callback=None):
                             print(f"Step:{step}, Reward:{rew}")
 
                         elif user_action == 'fast':
-                            # Fast forward using the model's actions until the end
+                            # fast forward using the model's actions until the end
                             always_step = True
         pygame.display.flip()
         clock.tick(fps)

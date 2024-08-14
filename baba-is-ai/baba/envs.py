@@ -8,6 +8,7 @@ from baba.play import play
 from baba.world_object import FBall, Baba, make_obj, RuleObject, Wall
 from baba import make, register
 
+PADDING=2
 
 
 def put_obj(env, obj, pos):
@@ -71,7 +72,7 @@ def break_rule(env, rule, new_pos={}, block_idx=None):
 
 
 NAMES = ["ball", "key", "door"]
-COLORS = ["red"]#["red", "blue", "green"]
+COLORS =["red"]#["red", "blue", "green"]
 OBJECTS = [
     (color, name) for color in COLORS for name in NAMES
 ]
@@ -159,7 +160,7 @@ class YouWinFixedYouEnv(YouWinEnv):
 class MakeWinEnv(BabaIsYouEnv):
     def __init__(
             self,
-            width=13, # was 8,8
+            width=9, # was 8,8
             height=9, 
             color_in_rule=False,
             break_win_rule=True,
@@ -180,7 +181,22 @@ class MakeWinEnv(BabaIsYouEnv):
         self.distractor_win_rule = distractor_win_rule
 
         self.win_obj_set = win_obj_set if win_obj_set is not None else NAMES
+        min_width = 3 + PADDING  # For "Baba is You"
+        min_height = 3 + PADDING  # For "Win is <object>" and Baba
+        if self.break_win_rule:
+            min_height = 4 + PADDING
+            min_width = 4 + PADDING
+        if self.distractor_rule_block:
+            min_height = max(min_height, 3 + PADDING)
+            min_width = max(min_width, 4 + PADDING)
+        if self.irrelevant_rule_distractor:
+            min_height = max(min_height, 3 + PADDING)
+            min_width = max(min_width, 6 + PADDING)
 
+
+        # Ensure grid size meets minimum requirements
+        width = max(width, min_width)
+        height = max(height, min_height)
         super().__init__(width=width, height=height, **kwargs)
 
     def _sample_objects(self):
@@ -202,6 +218,8 @@ class MakeWinEnv(BabaIsYouEnv):
         return obj1, obj2, obj3
 
     def _gen_grid(self, width, height, params=None):
+
+        
         self.grid = BabaIsYouGrid(width, height)
         self.grid.wall_rect(0, 0, width, height)
 
@@ -212,7 +230,7 @@ class MakeWinEnv(BabaIsYouEnv):
             obj1, obj2, obj3 = self._sample_objects()
 
         # Add the rules
-        put_rule(self, "baba", "you", positions=(1, 7))
+        put_rule(self, "baba", "you", positions=(1, height - PADDING))
 
         if self.color_in_rule:
             win_obj = obj1
@@ -224,16 +242,22 @@ class MakeWinEnv(BabaIsYouEnv):
         put_rule(self, win_obj, "win", positions=(1, 1))
         # break the win rule
         if self.break_win_rule:
-            break_rule(self, (win_obj, "win"), new_pos={"top": (2, 2), "size": (4, 4)}, block_idx=block_idx)
+            #TODO: This creates a rectangle of possible positions to change to. However, there are more especially if the level is not a square!
+            # Consider a 5x4 grid - there are two more free squares in the bottom right than our rectangle provides!
+            # why height - 3? beyond padding, bottom rule means 2 squares, top is 1 square
+            # why width - 2? beyond padding, left and right wall mean 2 squares
+            break_rule(self, (win_obj, "win"), new_pos={"top": (2, 2), "size": (width - PADDING - 2, height - PADDING - 3)}, block_idx=block_idx)
 
         if self.distractor_rule_block:
             # add distractor rule block for the other object
             # but place it such that it is impossible to make the obj2 win
-            positions = [
-                (4, 7), (5, 7), (6, 7), (7, 7), (8, 7), (9, 7), (10, 7), (11, 7),  # bottom row
-                (4, 1), (5, 1), (6, 1),  (7, 1), (8, 1), (9, 1), (10, 1), (11, 1),# top row
-                (11, 1), (11, 2), (11, 3), (11, 4), (11, 5), (11, 6)   # right column
-            ] # there is a padding of 1,1 each side and additional 1,1
+
+            positions = [(x,y) for x in range(4, width - PADDING + 1) for y in (1, height - PADDING)]
+            positions += [(width - PADDING, y) for y in range(1, height - PADDING - 1)]
+            #    (4, 7), #(5, 7), (6, 7), (7, 7), (8, 7), (9, 7), (10, 7), (11, 7),  # bottom row
+            #    (4, 1), #(5, 1), (6, 1),  (7, 1), (8, 1), (9, 1), (10, 1), (11, 1),# top row
+                #(11, 1), (11, 2), (11, 3), (11, 4), (11, 5), (11, 6)   # right column
+            #] # there is a padding of 1,1 each side and additional 1,1
             
             pos = positions[np.random.choice(len(positions))]
 
@@ -251,13 +275,10 @@ class MakeWinEnv(BabaIsYouEnv):
             place_obj(self, "baba", top=(1,2), size=(1,1))
         if self.randomize_obj:
             place_obj(self, obj1, top=(1, 2))
-            if self.distractor_obj:
-                place_obj(self, obj2, top=(1, 2))
         else:
-            place_obj(self, obj1, top=(11,7), size = (1,1))
-            if self.distractor_obj:
-                place_obj(self, obj2, top=(5, 5), size=(1,1))
-
+            place_obj(self, obj1, top=(width - PADDING, height - PADDING), size = (1,1))
+        if self.distractor_obj:
+                place_obj(self, obj2, top=(1, 2))
         # add extra distractor win rule
         if self.distractor_win_rule:
             put_rule(self, obj3[1], "win", positions=(4, 4))
@@ -352,7 +373,7 @@ for env_id in env_ids:
 class TwoRoomEnv(BabaIsYouEnv):
     def __init__(
             self,
-            width=13,
+            width=12,
             height=9,
             baba_pos="left_pushable",
             obj1_pos="anywhere",
@@ -374,6 +395,13 @@ class TwoRoomEnv(BabaIsYouEnv):
         self.irrelevant_rule_distractor = irrelevant_rule_distractor
         self.distractor_win_rule = distractor_win_rule
 
+        # goto_win min (9, 7)
+
+        min_width = 7 + PADDING  
+        min_height = 5 + PADDING 
+        #surprisingly, this works for all two room envs! except for distractor win rule, which is already super buggy
+        width = max(min_width, width)
+        height = max(min_height, height)
         pushable_area_size = (width // 2 - 2, height - 6)
         self.positions = {
             # not all left or right space because want it to be possible to push the objects
@@ -387,22 +415,22 @@ class TwoRoomEnv(BabaIsYouEnv):
             },
             "right_unpushable": [
                 # left border
-                *[(width-2, 2+i) for i in range(height-4)],
+                *[(width-PADDING, PADDING+i) for i in range(height-4)],
                 # bottom border
-                *[(width-2-i, height-2) for i in range(width//2-2)],
+                *[(width-PADDING-i, height-PADDING) for i in range(width//2-PADDING)],
             ],
             "left_anywhere": {
                 "top": (1, 1),
-                "size": (width // 2 - 2, height - 2)
+                "size": (width // 2 - PADDING, height - PADDING)
             },
             "right_anywhere": {
                 # start at y = 2 to prevent having object at the same place as the obj rule block of the win rule for the make_win envs
-                "top": (width // 2 + 1, 2),
-                "size": (width // 2 - 2, height - 2)
+                "top": (width // 2 + 1, PADDING),
+                "size": (width // 2 - PADDING, height - PADDING)
             },
             "anywhere": {
                 "top": (1, 2),
-                "size": (width - 2, height - 2)
+                "size": (width - PADDING, height - PADDING)
             }
         }
         self.left_pushable = self.positions["left_pushable"]
@@ -419,7 +447,7 @@ class TwoRoomEnv(BabaIsYouEnv):
         self.grid.wall_rect(0, 0, width, height)
 
         # Add the vertical wall dividing the two rooms
-        self.grid.vert_wall(width // 2, 1, height - 2, obj_type=lambda: make_obj("wall"))
+        self.grid.vert_wall(width // 2, 1, height - PADDING, obj_type=lambda: make_obj("wall"))
 
         # Sample the objects
         if self.color_in_rule:
@@ -439,7 +467,7 @@ class TwoRoomEnv(BabaIsYouEnv):
 
         # Add the rules
         # put "baba is you" such that it cannot be changed
-        put_rule(self, "baba", "you", positions=(1, height - 2))
+        put_rule(self, "baba", "you", positions=(1, height - PADDING))
         # the agent should be able to break "wall is stop" if needed
 
         # with this placement, the agent can make "wall is win" and goto "wall"
@@ -447,7 +475,11 @@ class TwoRoomEnv(BabaIsYouEnv):
         # to avoid that we add an unpushable block
         put_rule(self, "wall", "stop", positions=(1, 2))
         # put_obj(self, Wall(), pos=(1, 3))
-
+        # Place the objects and agent in the rooms
+        if self.randomize_baba:
+            self.baba_pos = place_obj(self, "baba", **self.baba_pos)
+        else:
+            self.baba_pos = place_obj(self, "baba", top=(2,3), size=(1,1))
         if self.color_in_rule:
             # put "obj1 is win" in the corner so that can place a distractor rule block for obj2 such it's impossible to make obj2 win
             put_rule(self, obj1, "win", positions=(width - 4, 1))
@@ -478,11 +510,7 @@ class TwoRoomEnv(BabaIsYouEnv):
             block_idx = 1 if self.color_in_rule else 0
             break_rule(self, (win_obj, "win"), new_pos=self.right_pushable, block_idx=block_idx)
 
-        # Place the objects and agent in the rooms
-        if self.randomize_baba:
-            baba_pos = place_obj(self, "baba", **self.baba_pos)
-        else:
-            baba_pos = place_obj(self, "baba", top=(2,3), size=(1,1))
+
         obj1_pos = place_obj(self, obj1, **self.obj1_pos)
         if self.distractor_obj:
             place_obj(self, obj2, **self.obj2_pos)
@@ -679,7 +707,7 @@ class TwoRoomBreakStopMakeWinNoDistractorRuleEnv(TwoRoomEnv):
 class TwoRoomMakeYouEnv(BabaIsYouEnv):
     def __init__(
             self,
-            width=13,
+            width=12,
             height=9,
             baba_pos="left_pushable",
             obj1_pos="right_anywhere",
@@ -699,7 +727,12 @@ class TwoRoomMakeYouEnv(BabaIsYouEnv):
         self.distractor_obj = distractor_obj
         self.distractor_rule_block = distractor_rule_block
         self.irrelevant_rule_distractor = irrelevant_rule_distractor
+        # goto_win min (9, 7)
 
+        min_width = 8 + PADDING  
+        min_height = 6 + PADDING 
+        width = max(min_width, width)
+        height = max(min_height, height)
         pushable_area_size = (width // 2 - 3, height - 6)
         self.positions = {
             # not all left or right space because want it to be possible to push the objects
@@ -773,7 +806,11 @@ class TwoRoomMakeYouEnv(BabaIsYouEnv):
         # put_rule(self, "wall", "stop", positions=(2, 2))
         # to avoid that we add an unpushable block
         put_rule(self, "wall", "stop", positions=(1, 1))
-
+        # Place the objects and agent in the rooms
+        if self.randomize_baba:
+            self.baba_pos = place_obj(self, "baba", **self.baba_pos)
+        else:
+            self.baba_pos = place_obj(self, "baba", top=(2,3), size=(1,1))
         if self.color_in_rule:
             # put "obj1 is win" in the corner so that can place a distractor rule block for obj2 such it's impossible to make obj2 win
             put_rule(self, obj1, "win", positions=(width - 4, 1))
@@ -800,11 +837,7 @@ class TwoRoomMakeYouEnv(BabaIsYouEnv):
             block_idx = 1 if self.color_in_rule else 0
             break_rule(self, (win_obj, "win"), new_pos=self.right_pushable, block_idx=block_idx)
 
-        # Place the objects and agent in the rooms
-        if self.randomize_baba:
-            baba_pos = place_obj(self, "baba", **self.baba_pos)
-        else:
-            baba_pos = place_obj(self, "baba", top=(2,3), size=(1,1))
+
         place_obj(self, obj1, **self.obj1_pos)
         if self.distractor_obj:
             place_obj(self, obj2, **self.obj2_pos)
@@ -825,7 +858,7 @@ class TwoRoomMakeWinMakeWinEnv(TwoRoomMakeYouEnv):
 class TwoRoomMakeWallWinEnv(BabaIsYouEnv):
     def __init__(
             self,
-            width=13,
+            width=12,
             height=9,
             baba_pos="left_pushable",
             obj1_pos="right_anywhere",
@@ -840,7 +873,12 @@ class TwoRoomMakeWallWinEnv(BabaIsYouEnv):
         self.distractor_obj = distractor_obj
         self.distractor_rule_block = distractor_rule_block
         self.irrelevant_rule_distractor = irrelevant_rule_distractor
+        # goto_win min (9, 7)
 
+        min_width = 8 + PADDING  
+        min_height = 6 + PADDING 
+        width = max(min_width, width)
+        height = max(min_height, height)
         pushable_area_size = (width // 2 - 3, height - 6)
         self.positions = {
             # not all left or right space because want it to be possible to push the objects
@@ -897,6 +935,11 @@ class TwoRoomMakeWallWinEnv(BabaIsYouEnv):
 
         put_rule(self, "baba", "you", positions=(1, height - 2))
         put_rule(self, "wall", "stop", positions=(2, 2))
+        # Place the objects and agent in the rooms
+        if self.randomize_baba:
+            self.baba_pos = place_obj(self, "baba", **self.baba_pos)
+        else:
+            self.baba_pos = place_obj(self, "baba", top=(2,3), size=(1,1))
         put_rule(self, obj1[1], "win", positions=(width - 4, 1))
 
         if self.distractor_rule_block:
@@ -920,11 +963,6 @@ class TwoRoomMakeWallWinEnv(BabaIsYouEnv):
         new_pos = self.positions["right_unpushable"][np.random.choice(len(self.positions["right_unpushable"]))]
         break_rule(self, (obj1[1], "win"), new_pos=new_pos, block_idx=0)
 
-        # Place the objects and agent in the rooms
-        if self.randomize_baba:
-            baba_pos = place_obj(self, "baba", **self.baba_pos)
-        else:
-            baba_pos = place_obj(self, "baba", top=(2,3), size=(1,1))
         place_obj(self, obj1, **self.obj1_pos)
         if self.distractor_obj:
             place_obj(self, obj2, **self.obj2_pos)

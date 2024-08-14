@@ -4,6 +4,9 @@ import yaml
 from dataclasses import make_dataclass
 
 def make_env(env_id, seed, idx, capture_video, run_name):
+    """
+    Makes a baba is you env
+    """
     def thunk():
         if capture_video and idx == 0:
             env = baba.make(f"{env_id}", render_mode="rgb_array")
@@ -18,6 +21,9 @@ def make_env(env_id, seed, idx, capture_video, run_name):
     return thunk
 
 def load_config(path):
+    """
+    Returns a dataclass for a config.yaml file
+    """
     with open(path, 'r') as file:
         config = yaml.safe_load(file)
         cfg = make_dataclass(

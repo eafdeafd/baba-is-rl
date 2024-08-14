@@ -10,6 +10,7 @@ import numpy as np
 from dataclasses import dataclass
 
 # Collects player trajectories
+# yes, this is very jank.
 
 trajectories = {}
 current_index = 0
@@ -37,8 +38,6 @@ def load_trajectories(directory):
 
 def save_traj(prev_obs, obs, action, rew, env_done, info, env_name):
     global trajectories, current_index
-
-    # Collect the current step's data
     if prev_obs is not None and obs is not None and action is not None:
         if current_index not in trajectories:
             trajectories[current_index] = []
@@ -55,7 +54,6 @@ def save_traj(prev_obs, obs, action, rew, env_done, info, env_name):
         current_index += 1
 
 def save_all_trajectories(env_name):
-    # Save all trajectories to a single JSON file when the program exits
     filename = f"{env_name}__all_trajectories.json"
     filepath = os.path.join("trajectories", filename)
     os.makedirs(os.path.dirname(filepath), exist_ok=True)

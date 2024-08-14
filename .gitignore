@@ -3,3 +3,4 @@ trajectories/
 videos/
 wandb/
 __pycache__/
+.env

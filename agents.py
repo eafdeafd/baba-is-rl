@@ -1,8 +1,7 @@
 import argparse
 import random
 import time
-from typing import Dict, Any
-
+from all_envs import init_goto_win_envs, init_make_win, init_two_room, init_two_room_envs_break_stop, init_two_room_envs_break_stop_make_win, init_two_room_anywhere, init_two_room_make_you_make_win
 import gymnasium as gym
 import numpy as np
 import torch
@@ -12,12 +11,15 @@ import torch.optim as optim
 from torch.distributions.categorical import Categorical
 from torch.utils.tensorboard import SummaryWriter
 from stable_baselines3.common.buffers import ReplayBuffer
-import baba
 import einops
 from util import make_env
 import wandb
 from collect_traj import load_trajectories
 from util import load_config
+from evals import evaluate_model
+
+MAX_SIZE = 12
+NUM_OBJECTS = 20.0
 
 class Agent(nn.Module):
     def __init__(self, envs, device=None):
@@ -28,14 +30,27 @@ class Agent(nn.Module):
         self.device = device if device is not None else torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
     def preprocess(self, obs):
+        """
+        Normalizes observations and converts np arrays to tensors
+        Rearranges shape to proper CNN format
+        """
         obs = torch.Tensor(obs).to(self.device)
-        NUM_OBJECTS = 20.0
-        obs = obs.float() / NUM_OBJECTS # normalize by number of objects (this is jank - do not hardcode)
+        if len(obs.shape) == 3: # add dummy batch dim
+            obs = obs[None, :]
         obs = einops.rearrange(obs, 'b w h c -> b c h w')  # Change shape to (batch_size, channels, height, width)
         obs = obs[:, 0, :, :].unsqueeze(1) # ignore channels besides objects (color, status doesn't matter for now)
+        # pad what we want
+        pad_height = (0, MAX_SIZE - obs.shape[2]) if obs.shape[2] < MAX_SIZE else (0, 0)
+        pad_width = (0, MAX_SIZE - obs.shape[3]) if obs.shape[3] < MAX_SIZE else (0, 0)
+        obs = torch.nn.functional.pad(obs, (pad_width[0], pad_width[1], pad_height[0], pad_height[1]), "constant", 0)
+        obs = obs.float() / NUM_OBJECTS # normalize by number of objects (this is jank - TODO:do not hardcode)
+
         return obs
 
     def get_action(self, obs):
+        """
+        Returns an action
+        """
         raise NotImplementedError
 
 class RandomAgent(Agent):
@@ -63,30 +78,31 @@ class QNetwork(nn.Module):
 class QCNNetwork(nn.Module):
     def __init__(self, env):
         super().__init__()
+        # TODO: Make this cleaner. Why do 1+ channels not matter? Because, the channel is used for state (not used in the simulator)
+        # Color, which is not very useful unless we have very complex tasks, and Object Id, which is useful
         input_channels = 1 #env.single_observation_space.shape[2]
-        self.conv1 = nn.Conv2d(in_channels=input_channels, out_channels=8, kernel_size=3, stride=1)
-        self.final_conv = nn.Conv2d(in_channels=8, out_channels=32, kernel_size=3, stride=1)
-        #self.conv3 = nn.Conv2d(in_channels=32, out_channels=, kernel_size=3, stride=1)
+        self.conv1 = nn.Conv2d(in_channels=input_channels, out_channels=8, kernel_size=4, stride=1)
+        self.conv2 = nn.Conv2d(in_channels=8, out_channels=16, kernel_size=4, stride=1)
+        self.conv3 = nn.Conv2d(in_channels=16, out_channels=32, kernel_size=3, stride=1)
         # try and ignore channels 
-
-        # Calculate the size of the flattened features after convolutions
-        def conv2d_size_out(size, kernel_size=3, stride=1, n=1):
+        def conv_size(size, kernel_size=3, stride=1, n=1):
             if n == 0: 
                 return size
-            return conv2d_size_out((size - (kernel_size - 1) - 1) // stride + 1, n=n-1)
+            return conv_size((size - (kernel_size - 1) - 1) // stride + 1, n=n-1)
+        w, h = env.single_observation_space.shape[0], env.single_observation_space.shape[1]
+        w, h = MAX_SIZE, MAX_SIZE
+        convw = conv_size(conv_size(w, kernel_size=4, n=2))
+        convh = conv_size(conv_size(h, kernel_size=4, n=2))
+        linear_input_size = convw * convh * self.conv3.out_channels
 
-        convw = conv2d_size_out(env.single_observation_space.shape[0], n=2)
-        convh = conv2d_size_out(env.single_observation_space.shape[1], n=2)
-        linear_input_size = convw * convh * self.final_conv.out_channels
-
-        self.fc1 = nn.Linear(linear_input_size, 128)
-        self.fc2 = nn.Linear(128, env.single_action_space.n)
+        self.fc1 = nn.Linear(linear_input_size, 512)
+        self.fc2 = nn.Linear(512, env.single_action_space.n)
 
     def forward(self, x):
         x = F.relu(self.conv1(x))
-        x = F.relu(self.final_conv(x))
-        #x = F.relu(self.conv3(x))
-        x = x.reshape(x.size(0), -1) 
+        x = F.relu(self.conv2(x))
+        x = F.relu(self.conv3(x))
+        x = x.reshape(x.size(0), -1)
         x = F.relu(self.fc1(x))
         return self.fc2(x)
 
@@ -106,6 +122,7 @@ class DQNAgent(Agent):
     def get_action(self, obs):
         if random.random() < self.epsilon:
             #actions = np.array([self.env.single_action_space.sample() for _ in range(self.config.num_envs)])
+            # The code currently doesn't use vectorized envs for DQN
             actions = np.array([self.envs.single_action_space.sample()])
         else:
             q_values = self.q_network(self.preprocess(obs))
@@ -124,9 +141,9 @@ class PPOAgent(Agent):
             if n == 0: 
                 return size
             return conv2d_size_out((size - (kernel_size[-n] - 1) - 1) // stride[-n] + 1, n=n-1)
-
-        convw = conv2d_size_out(obs_shape[0], [4,3], [2,1], n=2)
-        convh = conv2d_size_out(obs_shape[1], [4,3],[2,1], n=2)
+        w, h = MAX_SIZE, MAX_SIZE
+        convw = conv2d_size_out(w, [4,3], [2,1], n=2)
+        convh = conv2d_size_out(h, [4,3],[2,1], n=2)
         linear_input_size = convw * convh * 64 # final channel out
         self.actor = nn.Sequential(
             self.layer_init(nn.Conv2d(input_channels, 32, 4, stride=2)),
@@ -200,6 +217,9 @@ class Trainer:
         self.envs = gym.vector.SyncVectorEnv([make_env(config.env_id, config.seed + i, i, config.capture_video, self.run_name) for i in range(config.num_envs)])
 
     def __del__(self):
+        """
+        Cleanup
+        """
         self.envs.close()
         self.writer.close()
 
@@ -234,6 +254,10 @@ class DQNTrainer(Trainer):
 
 
     def load_model(self, local=True, name=""):
+        """
+        Local: loads a model from models/env/... dir
+        Not local: loads a model from wandb, needs run to be passed in from cli
+        """
         if local:
             self.agent.load_state_dict(torch.load(
                 f"models/{name}/dqn_agent.pt", map_location=self.device))
@@ -251,6 +275,7 @@ class DQNTrainer(Trainer):
 
     def train(self):
         global_step = 0
+        # Resume training if needed
         if self.config.track and wandb.run.resumed:
             run = self.run
             starting_update = run.summary.get("charts/global_step") + 1
@@ -264,9 +289,9 @@ class DQNTrainer(Trainer):
             self.agent.eval()
             self.config.total_timesteps += global_step
             print(f"resumed at update {starting_update}")
-
+        
+        # seed DQN with imitation learning from human.
         if len(self.config.seed_traj_dirs) != 0:
-            # seed DQN with imitation learning from human.
             dir_list = self.config.seed_traj_dirs.split()
             self.load_traj(dir_list)
 
@@ -333,6 +358,92 @@ class DQNTrainer(Trainer):
             self.writer.add_scalar("charts/global_step", global_step, global_step)
         return self.agent
     
+    #TODO: combine tran and cumulative train... 
+    # NOW WE'RE GETTING REALLY JANK!!!
+    def cumulative_train(self):
+        global_step = 0
+        # Resume training if needed
+        if self.config.track and wandb.run.resumed:
+            run = self.run
+            starting_update = run.summary.get("charts/global_step") + 1
+            global_step = starting_update
+            api = wandb.Api()
+            run = api.run(f"{run.entity}/{run.project}/{run.id}")
+            model = run.file("dqn_agent.pt")
+            model.download(f"models/{self.run_name}/")
+            self.agent.load_state_dict(torch.load(
+                f"models/{self.run_name}/dqn_agent.pt", map_location=self.device))
+            self.agent.eval()
+            self.config.total_timesteps += global_step
+            print(f"resumed at update {starting_update}")
+        
+        # seed DQN with imitation learning from human.
+        if len(self.config.seed_traj_dirs) != 0:
+            dir_list = self.config.seed_traj_dirs.split()
+            self.load_traj(dir_list)
+
+        start_time = time.time()        
+        target_network = DQNAgent(self.envs, self.device).to(self.device)
+        target_network.load_state_dict(self.agent.state_dict())
+        # TRY NOT TO MODIFY: start the game
+        obs, _ = self.envs.reset(seed=self.config.seed)
+        #print("Initial observation shape:", obs.shape)
+        for i in range(self.config.total_timesteps):
+            # ALGO LOGIC: put action logic here
+            self.agent.update_epsilon(self.linear_schedule(self.config.start_e, self.config.end_e, self.config.exploration_fraction * self.config.total_timesteps, global_step))
+            actions = self.agent.get_action(obs)
+
+            # TRY NOT TO MODIFY: execute the game and log data.
+            next_obs, rewards, terminations, truncations, infos = self.envs.step(actions)
+            # TRY NOT TO MODIFY: record rewards for plotting purposes
+            if "final_info" in infos:
+                for info in infos["final_info"]:
+                    if info and "episode" in info:
+                        print(f"global_step={global_step}, episodic_return={info['episode']['r']}")
+                        self.writer.add_scalar("charts/episodic_return", info["episode"]["r"], global_step)
+                        self.writer.add_scalar("charts/episodic_length", info["episode"]["l"], global_step)
+
+            # TRY NOT TO MODIFY: save data to reply buffer; handle `final_observation`
+            real_next_obs = next_obs.copy()
+            for idx, trunc in enumerate(truncations):
+                if trunc:
+                    real_next_obs[idx] = infos["final_observation"][idx]
+        
+            self.rb.add(obs, real_next_obs, actions, rewards, terminations, infos)
+
+            # TRY NOT TO MODIFY: CRUCIAL step easy to overlook
+            obs = next_obs
+
+            # ALGO LOGIC: training.
+            if global_step > self.config.learning_starts:
+                if global_step % self.config.train_frequency == 0:
+                    data = self.rb.sample(self.config.batch_size)
+                    with torch.no_grad():
+                        target_max, _ = target_network(data.next_observations).max(dim=1)
+                        td_target = data.rewards.flatten() + self.config.gamma * target_max * (1 - data.dones.flatten())
+                    old_val = self.agent(data.observations).gather(1, data.actions).squeeze()
+                    loss = F.mse_loss(td_target, old_val)
+
+                    if global_step % 100 == 0:
+                        self.writer.add_scalar("losses/td_loss", loss, global_step)
+                        self.writer.add_scalar("losses/q_values", old_val.mean().item(), global_step)
+                        print("SPS:", int(global_step / (time.time() - start_time)))
+                        self.writer.add_scalar("charts/SPS", int(global_step / (time.time() - start_time)), global_step)
+
+                    # optimize the model
+                    self.optimizer.zero_grad()
+                    loss.backward()
+                    self.optimizer.step()
+
+                # update target network
+                if global_step % self.config.target_network_frequency == 0:
+                    for target_network_param, q_network_param in zip(target_network.parameters(), self.agent.parameters()):
+                        target_network_param.data.copy_(
+                            self.config.tau * q_network_param.data + (1.0 - self.config.tau) * target_network_param.data
+                        )
+            global_step += self.config.num_envs
+            self.writer.add_scalar("charts/global_step", global_step, global_step)
+        return self.agent
     def save_model(self):
         if self.config.track:
             # wandb save
@@ -538,6 +649,7 @@ class PPOTrainer(Trainer):
             print("SPS:", int(global_step / (time.time() - start_time)))
             self.writer.add_scalar("charts/SPS", int(global_step / (time.time() - start_time)), global_step)
             self.writer.add_scalar("charts/global_step", global_step, global_step)
+        evaluate_model(self.agent)
         return self.agent
     
     def save_model(self):
