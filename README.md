@@ -7,13 +7,22 @@ after cloning this repo, run \
 `pip install -e .`
 
 # PPO and DQN
-PPO and DQN follow the cleanrl arguments. See their [docs](https://docs.cleanrl.dev/get-started/basic-usage/#two-ways-to-run) for more arguments. \
-`python ppo.py --seed 1 --total-timesteps 1000000 --env_id env/make_win`\
-`python dqn.py --seed 1 --total-timesteps 1000000 --env_id env/make_win`
+PPO and DQN follow the cleanrl arguments. See their [docs](https://docs.cleanrl.dev/get-started/basic-usage/#two-ways-to-run) for more arguments. To train on a single environment run and in the config/ yaml file for each respective model, set cumulative_train=False: \
+`python agents.py --name dqn`\
+`python agents.py --name ppo`\
+To train using cumulative learning set it to true in the config file and run: \
+`python agents.py`  \
+The config file and editing the training loop is useful for narrowing down which environments should be included in the cumulative trainer \
+A list of full environments can be found in the baba-is-ai package under evs.py
 
-# LLM
-Using gpt4o-mini requires an API key, so you'll need one to execute it. If you do not have one and want to see this functionality in use, you can message me! \
-`python llm.py`
+# Collecting trajectories
+DQN can take in expert trajectories using the seed_traj_dirs arugment in the config file. To collect run: \
+`python collect_traj.py --env xxxx` \
+It will automatically dump these trajectories into trajectories/
 
+# Testing models
+If you want to test a model, and visualize it, run: \
+`python play_model.py --env xxx --name run_name --model ppo/dqn/gpt` \
+The script attempts to load your model from local storage with the same run name under models/env folder. \
 Credit to Cloos et al. and Huang et al. for the base Baba simulator and CleanRL implementations.\
 Andrew (andrew.m.wu@gmail.com)
