@@ -5,6 +5,7 @@ The baba environment is a heavily modified version of this [baba-is-you simulato
 after cloning this repo, run \
 `cd baba-is-ai`\
 `pip install -e .`
+`pip install cleanrl`
 
 # PPO and DQN
 PPO and DQN follow the cleanrl arguments. See their [docs](https://docs.cleanrl.dev/get-started/basic-usage/#two-ways-to-run) for more arguments. To train on a single environment run and in the config/ yaml file for each respective model, set cumulative_train=False: \
