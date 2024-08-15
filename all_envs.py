@@ -1,5 +1,5 @@
 from baba.envs import MakeWinEnv, TwoRoomEnv, TwoRoomMakeYouEnv, TwoRoomMakeWallWinEnv
-
+from gymnasium.wrappers import RecordVideo
 # yeah, these were super tedious and chatgpt'd
 def init_goto_win_envs(width, height):
     """ Initialize GotoWin environments with different configurations. """
@@ -22,11 +22,11 @@ def init_make_win(width, height):
             MakeWinEnv(width=width, height=height, distractor_obj=False, distractor_rule_block=False)
         ],
         "medium": [
-            MakeWinEnv(width=width, height=height, distractor_rule_block=False),
-            MakeWinEnv(width=width, height=height, distractor_obj=False)
+            #MakeWinEnv(width=width, height=height, distractor_rule_block=False),
+            #MakeWinEnv(width=width, height=height, distractor_obj=False)
         ],
         "hard": [
-            MakeWinEnv(width=width, height=height, distractor_rule_block=True, irrelevant_rule_distractor=True)
+            #MakeWinEnv(width=width, height=height, distractor_rule_block=True, irrelevant_rule_distractor=True)
         ]
     }
 
@@ -99,6 +99,7 @@ def init_two_room_make_you_make_win(width, height):
     """ Initialize TwoRoom environments that are more challenging. """
     return {
         "easy":[TwoRoomMakeYouEnv(width=width, height=height)],
+        "medium": [],
         "hard": [
             TwoRoomMakeYouEnv(width=width, height=height, break_win_rule=True),
             TwoRoomMakeWallWinEnv(width=width, height=height)

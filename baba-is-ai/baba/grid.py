@@ -884,11 +884,13 @@ class BabaIsYouEnv(gym.Env):
 
         obs = self.gen_obs()
         truncated = False
+        info = {}
         if self.step_count >= self.max_steps:
             done = True
             truncated = True
-        
-        return obs, reward, done, truncated, {}
+        if done:
+            info = {"final_info":"hi :3"}
+        return obs, reward, done, truncated, info
 
     def reward(self):
         if self.is_win:

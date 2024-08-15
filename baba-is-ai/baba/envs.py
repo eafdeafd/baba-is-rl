@@ -184,16 +184,17 @@ class MakeWinEnv(BabaIsYouEnv):
         min_width = 3 + PADDING  # For "Baba is You"
         min_height = 3 + PADDING  # For "Win is <object>" and Baba
         if self.break_win_rule:
-            min_height = 4 + PADDING
-            min_width = 4 + PADDING
+            min_height = 5 + PADDING
+            min_width = 5 + PADDING
         if self.distractor_rule_block:
-            min_height = max(min_height, 3 + PADDING)
-            min_width = max(min_width, 4 + PADDING)
+            min_height = max(min_height, 5 + PADDING)
+            min_width = max(min_width, 5 + PADDING)
         if self.irrelevant_rule_distractor:
-            min_height = max(min_height, 3 + PADDING)
+            min_height = max(min_height, 5 + PADDING)
             min_width = max(min_width, 6 + PADDING)
-
-
+        if self.distractor_win_rule:
+            min_height = max(min_height, 5 + PADDING)
+            min_width = max(min_width, 6 + PADDING)
         # Ensure grid size meets minimum requirements
         width = max(width, min_width)
         height = max(height, min_height)
@@ -240,13 +241,17 @@ class MakeWinEnv(BabaIsYouEnv):
             block_idx = 0
         # add win rule
         put_rule(self, win_obj, "win", positions=(1, 1))
-        # break the win rule
+        if self.randomize_baba:
+            place_obj(self, "baba", top=(1, 2))
+        else:
+            place_obj(self, "baba", top=(1,2), size=(1,1))        # break the win rule
         if self.break_win_rule:
             #TODO: This creates a rectangle of possible positions to change to. However, there are more especially if the level is not a square!
             # Consider a 5x4 grid - there are two more free squares in the bottom right than our rectangle provides!
             # why height - 3? beyond padding, bottom rule means 2 squares, top is 1 square
             # why width - 2? beyond padding, left and right wall mean 2 squares
             break_rule(self, (win_obj, "win"), new_pos={"top": (2, 2), "size": (width - PADDING - 2, height - PADDING - 3)}, block_idx=block_idx)
+
 
         if self.distractor_rule_block:
             # add distractor rule block for the other object
@@ -266,22 +271,20 @@ class MakeWinEnv(BabaIsYouEnv):
                 put_obj(self, RuleObject(obj3[1]), pos)
             else:
                 put_obj(self, RuleObject(obj2[1]), pos)
-
         # Place the objects and agent in the grid
         # will always spawn top left, right below rule
-        if self.randomize_baba:
-            place_obj(self, "baba", top=(1, 2))
-        else:
-            place_obj(self, "baba", top=(1,2), size=(1,1))
+                # add extra distractor win rule
+        if self.distractor_win_rule:
+            put_rule(self, obj3[1], "win", positions=(4, height - PADDING))
+
         if self.randomize_obj:
             place_obj(self, obj1, top=(1, 2))
         else:
             place_obj(self, obj1, top=(width - PADDING, height - PADDING), size = (1,1))
+
         if self.distractor_obj:
                 place_obj(self, obj2, top=(1, 2))
-        # add extra distractor win rule
-        if self.distractor_win_rule:
-            put_rule(self, obj3[1], "win", positions=(4, 4))
+
 
         if self.color_in_rule:
             self.win_rule = f"{win_obj[0]} {win_obj[1]} is win"
@@ -293,6 +296,8 @@ class MakeWinEnv(BabaIsYouEnv):
             self.target_plan = f"make[{self.win_rule}], goto[{self.win_obj}]" if self.color_in_rule else f"make[{self.win_rule}], goto[{self.win_obj}]"
         else:
             self.target_plan = f"goto[{self.win_obj}]"
+
+
 
 
 @register("env/goto_win-distr_obj_rule")
